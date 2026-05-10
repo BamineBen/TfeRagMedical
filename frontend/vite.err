@@ -1,0 +1,25 @@
+[33mYou are using Node.js 20.18.0. Vite requires Node.js version 20.19+ or 22.12+. Please upgrade your Node.js version.[39m
+[2m16:24:56[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/dashboard/stats[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)
+[2m16:24:56[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/documents[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)
+[2m16:24:56[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/dashboard/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)
+[2m16:25:11[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/dashboard/stats[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)
+[2m16:25:11[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/documents[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)
+[2m16:25:11[22m [31m[1m[vite][22m[39m [31mhttp proxy error: /api/v1/dashboard/health[39m
+AggregateError [ECONNREFUSED]: 
+    at internalConnectMultiple (node:net:1118:18)
+    at afterConnectMultiple (node:net:1685:7)

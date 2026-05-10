@@ -1,0 +1,64 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Environnement virtuel
+.venv/
+venv/
+env/
+
+# Variables d'environnement (ne jamais commiter)
+.env
+*.env.local
+
+# PostgreSQL local (binaires portables + données — jamais dans git)
+pgdata/
+pgsql/
+
+# Base de données & index FAISS
+backend/data/
+*.faiss
+chunks_mapping.json
+
+# Uploads patients
+backend/uploads/
+
+# Logs
+*.log
+*.err
+*.out
+vite.err
+vite.out
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Node.js / Frontend
+frontend/node_modules/
+frontend/dist/
+
+# macOS
+.DS_Store
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Modèles ML téléchargés (volumineux)
+backend/.cache/
+*.bin
+*.safetensors
+
+# Jupyter
+.ipynb_checkpoints/

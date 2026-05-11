@@ -2,7 +2,7 @@ ActionType  : ce que le médecin veut faire
 Status      : état d'une opération
 InteractionSeverity : gravité d'une interaction médicamenteuse
 AgentEventType : type d'événement SSE envoyé au frontend
-"""
+""Classes de types utilisées dans l'agent (IntentClassifier, InteractionChecker, etc.) et pour la communication avec le frontend (/send)."""
 from enum import Enum
 
 

@@ -27,7 +27,7 @@ class IntentDetector:
     \b = limite de mot (word boundary). Ex: \bcréer\b match "créer" mais pas "recrée".
     """
 
-    # ── Patterns par ActionType ──────────────────────────────────────
+    #  Patterns par ActionType : (test pattern : actuel)
     _CREATE = re.compile(
         r'\b(cr[ée]er?|réserver?|planifier?|prendre|fixer|ajouter|programmer?)\b',
         re.IGNORECASE | re.UNICODE
@@ -53,7 +53,7 @@ class IntentDetector:
         re.IGNORECASE | re.UNICODE
     )
 
-    # ── Patterns d'extraction d'entités ─────────────────────────────
+    #  Patterns d'extraction d'entités : (test regex : actuel)
     _DOCTOR = re.compile(
         r'\b(dr\.?|docteur)\s+([A-ZÉÈÀÙÂÊÎÔÛa-zéèàùâêîôû][a-zéèàùâêîôû\-]+)',
         re.IGNORECASE

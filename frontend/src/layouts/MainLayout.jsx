@@ -39,6 +39,7 @@ import {
     LayoutDashboard, BookOpen, MessageSquare, Settings,
     Menu, X, LogOut, FilePlus, History, Users, ShieldCheck,
 } from 'lucide-react';
+import { Wand2 } from 'lucide-react';
 
 /** Éléments de navigation de la sidebar : ordre = ordre d'affichage. */
 const NAV_ITEMS = [
@@ -49,6 +50,7 @@ const NAV_ITEMS = [
     { path: '/conversations',label: 'Historique',            icon: History },
     { path: '/admin/users',  label: 'Utilisateurs',          icon: Users },
     { path: '/settings',     label: 'Configuration',         icon: Settings },
+    { path: '/agent',        label: 'Agent Médical',         icon: Wand2 },
 ];
 
 /** Titre affiché dans le header selon la route active. */
@@ -60,6 +62,7 @@ const PAGE_TITLES = {
     '/conversations': 'Historique des conversations',
     '/admin/users':   'Gestion des utilisateurs',
     '/settings':      'Configuration',
+    '/agent': 'Agent Médical',
 };
 
 export default function MainLayout() {

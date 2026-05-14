@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 from app.api.v1 import auth, users, documents, conversations, chat, dashboard, settings, notes, patients
+from app.api.v1 import agent
 
 api_router = APIRouter()
 api_router.include_router(auth.router,          prefix="/auth",           tags=["Authentification"])
@@ -11,4 +12,5 @@ api_router.include_router(dashboard.router,     prefix="/dashboard",      tags=[
 api_router.include_router(settings.router,      prefix="/admin/settings", tags=["Administration"])
 api_router.include_router(notes.router,         prefix="/notes",          tags=["Notes"])
 api_router.include_router(patients.router,      prefix="/patients",       tags=["Patients"])
+api_router.include_router(agent.router,         prefix="/agent",          tags=["Agent"])
 

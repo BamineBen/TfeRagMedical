@@ -3,6 +3,7 @@
  * Application principale (/login, /dashboard...).
  */
 import { createBrowserRouter, Navigate } from 'react-router-dom';
+import AgentMedical from './pages/AgentMedical';
 
 // Application principale
 import MainLayout         from './layouts/MainLayout';
@@ -48,6 +49,7 @@ export const router = createBrowserRouter([
             { path: 'conversations', element: <Conversations /> },
             { path: 'admin/users',   element: <UserManagement /> },
             { path: 'settings',      element: <SystemConfig /> },
+            { path: 'agent',         element: <AgentMedical /> },
         ],
     },
 

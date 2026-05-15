@@ -1,0 +1,28 @@
+# docker-compose.local.yml : PostgreSQL local pour développement Windows
+# UNIQUEMENT la base de données (backend + frontend tournent en natif)
+#
+# commande Démarrer :  docker compose -f docker-compose.local.yml up -d
+# commande Arrêter  :  docker compose -f docker-compose.local.yml down
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rag_postgres_local
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: ragmedical
+      POSTGRES_PASSWORD: RgM3dical_2026_Pr0d
+      POSTGRES_DB: rag_platform
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ragmedical"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  postgres_local_data:
+    name: rag-local_postgres_data

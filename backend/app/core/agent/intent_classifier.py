@@ -1,181 +1,385 @@
-intent_classifier.py — Détection d'intention par regex.
+"""
+intent_classifier.py — IntentDetector (anciennement IntentClassifier)
+Section 5 : Classification de l'intention utilisateur
 
-IntentDetector analyse le texte libre du médecin et retourne :
-- L'action voulue (ActionType)
-- Les entités extraites (patient, médecin, date)
+Détermine si l'utilisateur veut consulter un planning, créer/modifier/supprimer
+un RDV, vérifier des interactions médicamenteuses, interroger un dossier,
+ou une intention mixte.
 
-Exemple :
-    "Créer RDV Dr Martin demain 14h pour DUPONT Jean"
-    → ActionType.CREATE_APPOINTMENT
-    → entities = {"doctor": "Dr Martin", "patient": "DUPONT Jean", "date": "demain 14h"}
+Correspond à «IntentDetector» du diagramme de classes UML (page 1) :
+  + detectAction(request: String): ActionType
+  + extractPatientId(request: String): String
+  + extractDoctorId(request: String): String
 
-   Utilisation du regex raison :  Fiabilité et rapidité. Le médecin peut écrire "rdv dupont demain" ou "créer rendez-vous pour dupont" 
-   , les regex capturent les deux. Le LLM pourrait halluciner au niveau de l'intention.
-
+NOTE PÉDAGOGIQUE :
+  Approche rule-based (regex français) — plus rapide qu'un LLM,
+  adaptée à un usage en temps réel dans un cabinet médical.
+  Pour un projet de 3e année, les regex suffisent pour les patterns courants.
+"""
+import logging
 import re
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Optional, Tuple
 
-from app.core.agent.types import ActionType
+from app.core.agent.types import ActionType, IntentType
+
+logger = logging.getLogger(__name__)
 
 
 class IntentDetector:
     """
-    Détecte l'intention d'une requête médicale.
-    
-    Utilise des regex (expressions régulières) pour chercher des mots-clés.
-    \b = limite de mot (word boundary). Ex: \bcréer\b match "créer" mais pas "recrée".
+    Détecteur d'intention utilisateur.
+
+    Correspond à «IntentDetector» du diagramme UML (package Agent).
+
+    Méthodes publiques (conformes au diagramme) :
+      detectAction(request)   → ActionType  (anciennement classify())
+      extractPatientId(request) → str       (anciennement detect_patient())
+      extractDoctorId(request)  → str       (anciennement detect_doctor())
+
+    Approche : regex français rule-based.
+    Avantages : déterministe, rapide, sans appel LLM.
+    Limites : ne couvre pas toutes les formulations possibles.
     """
 
-    #  Patterns par ActionType : (test pattern : actuel)
-    _CREATE = re.compile(
-        r'\b(cr[ée]er?|réserver?|planifier?|prendre|fixer|ajouter|programmer?)\b',
-        re.IGNORECASE | re.UNICODE
+    # ── Mots-clés d'intention (formes conjuguées ET infinitif -er) ────
+    # Exemples : "annuler", "annule", "annulé", "annulez" sont tous couverts
+
+    # CREATE : verbes d'ajout
+    _CREATE_KEYWORDS = (
+        r"\b(cr[eé]er?|r[eé]server?|prendre?|fix[eé]r?|planifier?|ajouter?|bloquer?|programmer?)\b"
     )
-    _DELETE = re.compile(
-        r'\b(annuler?|supprimer?|effacer?|enlever?|retirer?)\b',
-        re.IGNORECASE | re.UNICODE
+    # MODIFY : verbes de changement
+    _MODIFY_KEYWORDS = (
+        r"\b(modifi[eé]r?|d[eé]cale[rz]?|change[rz]?|reporte[rz]?|repousse[rz]?|d[eé]place[rz]?|d[eé]caler?)\b"
     )
-    _MODIFY = re.compile(
-        r'\b(modifier?|changer?|déplacer?|reporter?|reprogrammer?|mettre à jour)\b',
-        re.IGNORECASE | re.UNICODE
+    # DELETE : verbes de suppression
+    _DELETE_KEYWORDS = (
+        r"\b(supprime[rz]?|annule[rz]?|efface[rz]?|enl[eè]ve[rz]?|retire[rz]?|annul[eé])\b"
     )
-    _RDV = re.compile(
-        r'\b(rdv|rendez.vous|consultation|appointment)\b',
-        re.IGNORECASE | re.UNICODE
+    # Nom désignant un rendez-vous
+    # Accepte "rendez-vous", "rendez -vous" (espace avant tiret), "rendez vous"
+    _APPOINTMENT_NOUN = r"\b(rdv|rendez\s*-?\s*vous|consultation|cr[eé]neau|visite)\b"
+    # PLANNING : mots relatifs au calendrier et aux disponibilités
+    _PLANNING_KEYWORDS = (
+        r"\b(planning|agenda|disponibilit[eé]s?|disponible[s]?|"
+        r"cr[eé]neaux?\s+(?:libres?|disponibles?)|cr[eé]neaux?\s+de|"
+        r"calendrier|horaires?|emploi\s+du\s+temps|"
+        r"quand\s+est[-\s]il\s+disponible|qui\s+est\s+disponible|"
+        r"absences?|absent|qui\s+travaille|libre[s]?\s+(?:demain|aujourd|lundi|mardi|mercredi|jeudi|vendredi))\b"
+        r"|quels?\s+sont\s+les\s+cr[eé]neaux"
     )
-    _PLANNING = re.compile(
-        r'\b(planning|agenda|disponibilit[eé]s?|cr[eé]neaux?|horaires?|calendrier)\b',
-        re.IGNORECASE | re.UNICODE
+    # QUERY_PATIENT : mots relatifs à un dossier médical
+    _QUERY_PATIENT_KEYWORDS = (
+        r"\b(dossier|r[eé]sum[eé]|ant[eé]c[eé]dents?|traitements?|biologie|"
+        r"consultation[s]?\s+de|diagnostic|pathologie|quel[s]?|quelle[s]?|"
+        r"combien|donne-?moi|affiche|montre)\b"
     )
-    _INTERACTION = re.compile(
-        r'\b(interaction|incompatible|contre.indication|allergi|m[eé]dicaments?)\b',
-        re.IGNORECASE | re.UNICODE
+    # CHECK_INTERACTIONS : mots relatifs aux interactions médicamenteuses (nouveau)
+    _INTERACTION_KEYWORDS = (
+        r"\b(interaction[s]?|contre-?indication[s]?|incompatible[s]?|"
+        r"compatible[s]?|association[s]?\s+m[eé]dicamenteuse[s]?|"
+        r"v[eé]rifi[eé]r?\s+(?:les?\s+)?m[eé]dicament[s]?|"
+        r"ordonnance|prescription|valide[rz]?|v[eé]rifie[rz]?|"
+        r"allergi[eé]s?|m[eé]dicament[s]?\s+incompatibles?)\b"
     )
 
-    #  Patterns d'extraction d'entités : (test regex : actuel)
-    _DOCTOR = re.compile(
-        r'\b(dr\.?|docteur)\s+([A-ZÉÈÀÙÂÊÎÔÛa-zéèàùâêîôû][a-zéèàùâêîôû\-]+)',
-        re.IGNORECASE
+    # Extraction entités
+    _DOCTOR_PATTERN = re.compile(
+        r"\b(dr|docteur|pr|professeur)\.?\s+([A-ZÉÈÀ][a-zéèàâêîôû-]+)",
+        re.IGNORECASE,
     )
-    _PATIENT = re.compile(
-        r'\b(patient|pour|dossier)\s+([A-ZÉÈÀÙ][A-ZÉÈÀÙ\s\-]+?)(?:\s+avec|\s+demain|\s+à|\s*$)',
-        re.IGNORECASE
+    _PATIENT_PATTERN = re.compile(
+        r"\b([A-ZÉÈÀ]{2,}(?:\s+[A-ZÉÈÀ][a-zéèàâêîôû-]+)?)\b"
     )
-    _TIME = re.compile(
-        r'\b(\d{1,2}[h:]\d{0,2}|\d{1,2}\s*heures?)\b',
-        re.IGNORECASE
+    _DATE_PATTERN = re.compile(
+        r"\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|"
+        r"\d{1,2}\s+(?:janvier|f[eé]vrier|mars|avril|mai|juin|juillet|ao[uû]t|"
+        r"septembre|octobre|novembre|d[eé]cembre)(?:\s+\d{4})?|"
+        r"aujourd'hui|demain|apr[eè]s[-\s]demain|"
+        r"lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b",
+        re.IGNORECASE,
     )
-    _DATE_REL = re.compile(
-        r'\b(demain|après.demain|lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche)\b',
-        re.IGNORECASE
-    )
+
+    _FRENCH_MONTHS: dict = {
+        "janvier": 1, "fevrier": 2, "février": 2, "mars": 3, "avril": 4,
+        "mai": 5, "juin": 6, "juillet": 7, "aout": 8, "août": 8,
+        "septembre": 9, "octobre": 10, "novembre": 11, "decembre": 12, "décembre": 12,
+    }
+    _TIME_PATTERN = re.compile(r"\b(\d{1,2})\s*h(?:\s*(\d{2}))?\b", re.IGNORECASE)
+
+    # Détection de la période demandée (semaine / mois / jour par défaut)
+    _WEEK_PATTERN  = re.compile(r"\b(cette\s+semaine|semaine\s+prochaine|la\s+semaine)\b", re.IGNORECASE)
+    _MONTH_PATTERN = re.compile(r"\b(ce\s+mois|mois\s+prochain|le\s+mois)\b", re.IGNORECASE)
+
+    # ── Méthodes publiques du diagramme UML ───────────────────────────
 
     def detectAction(self, request: str) -> ActionType:
         """
-        Retourne l'ActionType correspondant à la requête.
-        
-        Algorithme : cherche les mots-clés dans cet ordre de priorité :
-        1. Interactions médicamenteuses
-        2. Suppression de RDV
-        3. Modification de RDV
-        4. Création de RDV
-        5. Consultation planning
-        6. Fallback : requête patient RAG
+        Détecte l'action demandée dans une requête.
+
+        Méthode principale du diagramme UML : IntentDetector.detectAction().
+
+        Paramètres :
+          request : texte de la requête du médecin en français
+
+        Retourne :
+          ActionType détecté (CREATE_APPOINTMENT, QUERY_PATIENT, etc.)
+
+        Algorithme :
+          1. Détecter les mots-clés par catégorie
+          2. Combiner selon des règles de priorité
+          3. Si ambiguïté → MIXED
         """
         q = request.lower()
 
-        if self._INTERACTION.search(q):
+        has_appt          = bool(re.search(self._APPOINTMENT_NOUN, q))
+        has_planning      = bool(re.search(self._PLANNING_KEYWORDS, q))
+        has_create        = bool(re.search(self._CREATE_KEYWORDS, q))
+        has_modify        = bool(re.search(self._MODIFY_KEYWORDS, q))
+        has_delete        = bool(re.search(self._DELETE_KEYWORDS, q))
+        has_patient_query = bool(re.search(self._QUERY_PATIENT_KEYWORDS, q))
+        has_interaction   = bool(re.search(self._INTERACTION_KEYWORDS, q))
+
+        # CHECK_INTERACTIONS : priorité sur les autres si mot-clé d'interaction présent
+        if has_interaction:
             return ActionType.CHECK_INTERACTIONS
 
-        has_rdv  = bool(self._RDV.search(q))
-        has_del  = bool(self._DELETE.search(q))
-        has_mod  = bool(self._MODIFY.search(q))
-        has_cre  = bool(self._CREATE.search(q))
-        has_plan = bool(self._PLANNING.search(q))
+        # MIXED : plusieurs intentions conflictuelles
+        agenda_intents = sum([has_create, has_modify, has_delete])
 
-        if has_del and has_rdv:
+        # Exception : "créer un RDV avec résumé du patient" → CREATE_APPOINTMENT
+        # (le résumé RAG sera injecté automatiquement par l'agent)
+        if has_patient_query and has_create and has_appt and not has_modify and not has_delete:
+            pass  # Traiter comme CREATE_APPOINTMENT ci-dessous
+        elif has_patient_query and (has_create or has_modify or has_delete) and has_appt:
+            return ActionType.MIXED
+
+        if agenda_intents >= 2:
+            return ActionType.MIXED
+
+        if has_delete and has_appt:
             return ActionType.DELETE_APPOINTMENT
-        if has_mod and has_rdv:
+        if has_modify and has_appt:
             return ActionType.MODIFY_APPOINTMENT
-        if has_cre and has_rdv:
+        if has_create and has_appt:
             return ActionType.CREATE_APPOINTMENT
-        if has_plan or (has_rdv and not has_cre and not has_del):
+        if has_planning:
             return ActionType.CONSULT_PLANNING
+        if has_patient_query:
+            return ActionType.QUERY_PATIENT
 
+        # Fallback → interroger le dossier patient
         return ActionType.QUERY_PATIENT
 
     def extractPatientId(self, request: str) -> Optional[str]:
         """
-        Extrait le nom du patient.
-        Ex: "patient DUPONT Jean" → "DUPONT Jean"
-        Ex: "pour MARTIN Sophie" → "MARTIN Sophie"
+        Extrait l'identifiant (nom) du patient depuis la requête.
+
+        Méthode du diagramme UML : IntentDetector.extractPatientId().
+
+        Paramètres :
+          request : texte de la requête du médecin
+
+        Retourne :
+          Nom du patient détecté, ou None
         """
-        m = self._PATIENT.search(request)
-        if m:
-            return m.group(2).strip()
-        return None
+        return self.detect_patient(request)
 
     def extractDoctorId(self, request: str) -> Optional[str]:
         """
-        Extrait le nom du médecin.
-        Ex: "Dr Martin" → "Dr Martin"
-        Ex: "docteur Dupont" → "Dr Dupont"
+        Extrait l'identifiant (nom) du médecin depuis la requête.
+
+        Méthode du diagramme UML : IntentDetector.extractDoctorId().
+
+        Paramètres :
+          request : texte de la requête
+
+        Retourne :
+          Nom du médecin (ex: "Dr Martin"), ou None
         """
-        m = self._DOCTOR.search(request)
+        return self.detect_doctor(request)
+
+    # Alias rétro-compatible (ancien nom utilisé dans medical_agent.py)
+    def classify(self, query: str) -> ActionType:
+        """Alias de detectAction() — conservé pour la compatibilité."""
+        return self.detectAction(query)
+
+    def extract_entities(self, query: str) -> dict:
+        """
+        Extrait toutes les entités (médecin, patient, date, heure, période) depuis la requête.
+
+        Utilisé par MedicalAgent pour alimenter les paramètres des outils.
+
+        Retourne :
+          dict avec clés : doctor, patient, date, time, period
+          period : "day" | "week" | "month"
+        """
+        return {
+            "doctor":  self.extractDoctorId(query),
+            "patient": self.extractPatientId(query),
+            "date":    self.detect_date(query),
+            "time":    self.detect_time(query),
+            "period":  self.detect_period(query),
+        }
+
+    def detect_period(self, query: str) -> str:
+        """
+        Détecte la période demandée : 'week', 'month', ou 'day' (défaut).
+
+        Utilisé pour la vue d'ensemble semaine/mois (CDC §5.2).
+        """
+        if re.search(self._MONTH_PATTERN, query):
+            return "month"
+        if re.search(self._WEEK_PATTERN, query):
+            return "week"
+        return "day"
+
+    def detect_doctor(self, query: str) -> Optional[str]:
+        m = self._DOCTOR_PATTERN.search(query)
         if m:
             return f"Dr {m.group(2).capitalize()}"
         return None
 
-    def extract_entities(self, request: str) -> Dict[str, Optional[str]]:
-        """
-        Extrait toutes les entités d'une requête en une seule passe.
-        Retourne un dict : {"doctor": ..., "patient": ..., "date": ..., "time": ...}
-        """
-        date_str = None
-        m_date = self._DATE_REL.search(request)
-        if m_date:
-            date_str = m_date.group(0)
+    # ── Patterns de détection du nom patient ──────────────────────────
+    # Priorité 1 : "patient X" ou "patiente X"
+    _PATIENT_KEYWORD_PATTERN = re.compile(
+        r"\bpatients?\s+([A-Za-zÉÈÀéèàâêîôûùÂÊÎÔÛ][a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ-]+"
+        r"(?:\s+[a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ][a-zéèàâêîôûù-]+)?)",
+        re.IGNORECASE,
+    )
+    # Priorité 2 : "pour X avec Y" → X est le patient
+    _PATIENT_POUR_AVEC_PATTERN = re.compile(
+        r"\bpour\s+(?:le\s+patient\s+|la\s+patiente\s+)?(.+?)\s+avec\b",
+        re.IGNORECASE,
+    )
+    # Priorité 3 : "pour X" avec majuscule initiale
+    _PATIENT_POUR_PATTERN = re.compile(
+        r"\bpour\s+([A-ZÉÈÀ][a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ-]+"
+        r"(?:\s+[a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ][a-zéèàâêîôûù-]+)?)"
+    )
+    # Priorité 4 : mots capitalisés en fin de requête
+    # Couvre "Dossier de Martine Durand", "résumé de Frédéric Aubert"
+    _PATIENT_DE_PATTERN = re.compile(
+        r"\bde\s+([A-Za-zÉÈÀéèàâêîôûù][a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ-]+"
+        r"(?:\s+[A-Za-zÉÈÀéèàâêîôûù][a-zA-ZéèàâêîôûùÉÈÀÂÊÎÔÛ-]+)?)\s*$",
+        re.IGNORECASE,
+    )
 
-        time_str = None
-        m_time = self._TIME.search(request)
-        if m_time:
-            time_str = m_time.group(0)
+    # Mots exclus de la détection patient (articles, titres, etc.)
+    _EXCLUDE_PATIENT_WORDS = frozenset([
+        "le", "la", "les", "un", "une", "dr", "pr", "docteur",
+        "ce", "son", "sa", "ses", "mon", "son",
+    ])
 
-        return {
-            "doctor":  self.extractDoctorId(request),
-            "patient": self.extractPatientId(request),
-            "date":    date_str,
-            "time":    time_str,
+    def detect_patient(self, query: str) -> Optional[str]:
+        """
+        Détecte le nom du patient dans la requête (en français).
+
+        Ordre de priorité — du plus explicite au moins explicite :
+          1. "patient Martine Durand"        → "Martine Durand"
+          2. "pour Sophie Martin avec Dr X"  → "Sophie Martin"
+          3. "pour DUPONT Jean"              → "DUPONT Jean"
+          4. "Dossier de Martine Durand"     → "Martine Durand"  (fin de phrase)
+          5. "DUPONT Jean" (tout caps)       → "DUPONT Jean"
+
+        Le .title() normalise la casse : "sophie martin" → "Sophie Martin"
+        """
+        # Priorité 1 : "patient X" ou "patiente X"
+        m = self._PATIENT_KEYWORD_PATTERN.search(query)
+        if m:
+            return m.group(1).strip().title()
+
+        # Priorité 2 : "pour X avec Y" → X est le patient (entre "pour" et "avec")
+        m = self._PATIENT_POUR_AVEC_PATTERN.search(query)
+        if m:
+            candidate = m.group(1).strip()
+            if candidate.lower().split()[0] not in self._EXCLUDE_PATIENT_WORDS:
+                return candidate.title()
+
+        # Priorité 3 : "pour X" avec majuscule initiale
+        m = self._PATIENT_POUR_PATTERN.search(query)
+        if m:
+            candidate = m.group(1).strip()
+            if candidate.lower().split()[0] not in self._EXCLUDE_PATIENT_WORDS:
+                return candidate
+
+        # Priorité 4 : "dossier de X" / "résumé de X" → X en fin de requête
+        # Couvre "Dossier de Martine Durand", "résumé de Frédéric Aubert"
+        m = self._PATIENT_DE_PATTERN.search(query)
+        if m:
+            candidate = m.group(1).strip()
+            if candidate.lower().split()[0] not in self._EXCLUDE_PATIENT_WORDS:
+                return candidate.title()
+
+        # Priorité 5 : mot(s) tout en MAJUSCULES (ex : "DUPONT Jean")
+        for m in self._PATIENT_PATTERN.finditer(query):
+            name = m.group(1)
+            if name.lower() not in ("dr", "pr", "rdv"):
+                return name
+
+        return None
+
+    def detect_date(self, query: str) -> Optional[datetime]:
+        m = self._DATE_PATTERN.search(query.lower())
+        if not m:
+            return None
+        token = m.group(1).lower()
+        now = datetime.utcnow().replace(hour=9, minute=0, second=0, microsecond=0)
+
+        if token == "aujourd'hui":
+            return now
+        if token == "demain":
+            return now + timedelta(days=1)
+        if "apr" in token and "demain" in token:
+            return now + timedelta(days=2)
+
+        weekdays = {
+            "lundi": 0, "mardi": 1, "mercredi": 2, "jeudi": 3,
+            "vendredi": 4, "samedi": 5, "dimanche": 6,
         }
+        if token in weekdays:
+            target = weekdays[token]
+            delta = (target - now.weekday()) % 7 or 7
+            return now + timedelta(days=delta)
 
-    def resolve_datetime(self, date_str: Optional[str], time_str: Optional[str]) -> Optional[datetime]:
-        """
-        Convertit une date relative + heure en datetime.
-        Ex: "demain", "14h" → datetime(aujourd'hui+1, 14, 0)
-        """
-        now = datetime.now()
-        base = now
+        # format "18 avril 2026" (mois en lettres)
+        french_m = re.match(
+            r"(\d{1,2})\s+([a-zéèûô]+)(?:\s+(\d{4}))?", token
+        )
+        if french_m:
+            month_name = french_m.group(2).lower()
+            month = self._FRENCH_MONTHS.get(month_name)
+            if month:
+                day = int(french_m.group(1))
+                year = int(french_m.group(3)) if french_m.group(3) else now.year
+                try:
+                    return datetime(year, month, day, 9, 0)
+                except ValueError:
+                    pass
 
-        if date_str:
-            ds = date_str.lower()
-            if "demain" in ds:
-                base = now + timedelta(days=1)
-            elif "après-demain" in ds or "apres-demain" in ds:
-                base = now + timedelta(days=2)
-            else:
-                jours = {"lundi":0,"mardi":1,"mercredi":2,"jeudi":3,"vendredi":4,"samedi":5,"dimanche":6}
-                for jour, n in jours.items():
-                    if jour in ds:
-                        diff = (n - now.weekday()) % 7 or 7
-                        base = now + timedelta(days=diff)
-                        break
+        # format numérique DD/MM ou DD/MM/YYYY
+        try:
+            parts = re.split(r"[/-]", token)
+            day = int(parts[0])
+            month = int(parts[1])
+            year = int(parts[2]) if len(parts) > 2 else now.year
+            if year < 100:
+                year += 2000
+            return datetime(year, month, day, 9, 0)
+        except (ValueError, IndexError):
+            return None
 
-        if time_str:
-            m = re.search(r'(\d{1,2})[h:](\d{0,2})', time_str, re.IGNORECASE)
-            if m:
-                h = int(m.group(1))
-                mi = int(m.group(2)) if m.group(2) else 0
-                return base.replace(hour=h, minute=mi, second=0, microsecond=0)
+    def detect_time(self, query: str) -> Optional[Tuple[int, int]]:
+        m = self._TIME_PATTERN.search(query)
+        if m:
+            hour = int(m.group(1))
+            minute = int(m.group(2)) if m.group(2) else 0
+            return (hour, minute)
+        return None
 
-        return base.replace(hour=9, minute=0, second=0, microsecond=0)
+
+# ── Alias rétro-compatible ────────────────────────────────────────────
+# L'ancien code utilise IntentClassifier. On crée un alias pour éviter
+# de casser les imports existants tout en respectant le nouveau nom UML.
+IntentClassifier = IntentDetector

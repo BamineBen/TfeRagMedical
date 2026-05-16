@@ -40,7 +40,6 @@ _SUMMARY_PROMPT = (
     "Sois précis et factuel. Ne mentionne QUE le patient indiqué."
 )
 
-
 # ══════════════════════════════════════════════════════════════════════
 # Fonctions de recherche de chunks
 # ══════════════════════════════════════════════════════════════════════
@@ -55,7 +54,6 @@ def _normalize(text: str) -> str:
     """
     import unicodedata
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii").lower()
-
 
 def _find_patient_chunks(all_chunks: List[dict], patient_name: str,
                          k: int = 15) -> List[dict]:
@@ -117,7 +115,6 @@ def _find_patient_chunks(all_chunks: List[dict], patient_name: str,
     logger.info("[RAGQueryTool] Patient '%s' introuvable dans les sources", patient_name)
     return []
 
-
 def _faiss_search(index, chunks: List[dict], query: str, k: int = 10) -> List[dict]:
     """
     Recherche FAISS sémantique (requêtes sans patient précis).
@@ -145,7 +142,6 @@ def _faiss_search(index, chunks: List[dict], query: str, k: int = 10) -> List[di
         chunk["score"] = float(dist)
         hits.append(chunk)
     return hits
-
 
 # ══════════════════════════════════════════════════════════════════════
 # Fonctions de résumé LLM
@@ -193,7 +189,6 @@ def _call_mistral(context: str, patient_name: str) -> Optional[str]:
         logger.warning("[RAGQueryTool] Mistral indisponible : %s", exc)
         return None
 
-
 def _call_ollama(context: str, patient_name: str) -> Optional[str]:
     """
     Génère un résumé via Ollama (VPS ou local).
@@ -231,7 +226,6 @@ def _call_ollama(context: str, patient_name: str) -> Optional[str]:
         logger.warning("[RAGQueryTool] Ollama indisponible : %s", exc)
         return None
 
-
 def _generate_summary(context: str, patient_name: str,
                        llm_mode: str = "cloud") -> tuple:
     """
@@ -261,7 +255,6 @@ def _generate_summary(context: str, patient_name: str,
     fallback_text = f"Informations pour {patient_name or 'ce patient'} :\n\n{context}"
     return fallback_text, "fallback (chunks bruts)"
 
-
 # ══════════════════════════════════════════════════════════════════════
 # Outil principal
 # ══════════════════════════════════════════════════════════════════════
@@ -271,7 +264,6 @@ class RAGQueryTool(AgentTool):
     Outil de consultation du dossier médical patient.
 
     Hérite de AgentTool (pattern Strategy).
-    Correspond à RAGQueryTool du diagramme UML Section 5.
 
     Flux d'exécution :
       1. Charger l'index RAG depuis rag_state

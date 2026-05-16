@@ -1,8 +1,6 @@
 """
 user_token_store.py — UserTokenStore
 Section 5 : Persistance des tokens OAuth2 Google par utilisateur.
-
-Correspond à UserTokenStore du diagramme.
 Stocke les credentials Google de chaque médecin sur disque (JSON).
 Chemin : /app/data/google_tokens/{user_id}.json
 """
@@ -22,11 +20,9 @@ _DEFAULT_DIR = (
 )
 _STORAGE_DIR = Path(os.getenv("GOOGLE_TOKENS_DIR", _DEFAULT_DIR))
 
-
 class UserTokenStore:
     """
     Stockage fichier des tokens Google OAuth2 par user_id.
-    Correspond à UserTokenStore du diagramme.
     Thread-safe en lecture/écriture car chaque user a son propre fichier.
     """
 

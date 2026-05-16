@@ -114,7 +114,7 @@ function GoogleStatusBanner({ connected, onConnect, onDisconnect, connecting }) 
             <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
             <div className="flex-1 min-w-0">
                 <p className="text-[11px] font-bold text-emerald-900">Google Calendar connecté</p>
-                <p className="text-[10px] text-emerald-700">Les RDV sont créés dans votre agenda réel</p>
+                <p className="text-[10px] text-emerald-700">Les RDV sont créés dans votre agenda Google</p>
             </div>
             <button onClick={onDisconnect} className="text-[10px] text-emerald-700 hover:text-rose-700 font-bold px-2 py-1 rounded transition-colors flex items-center gap-1">
                 <Unlink size={11} /> Déconnecter
@@ -125,13 +125,13 @@ function GoogleStatusBanner({ connected, onConnect, onDisconnect, connecting }) 
         <div className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200 flex-shrink-0">
             <AlertCircle size={16} className="text-amber-500 flex-shrink-0 animate-pulse" />
             <div className="flex-1 min-w-0">
-                <p className="text-[11px] font-bold text-amber-900">Mode démo — agenda simulé</p>
-                <p className="text-[10px] text-amber-700">Connectez Google Calendar pour des RDV réels</p>
+                <p className="text-[11px] font-bold text-amber-900">Google Calendar non connecté</p>
+                <p className="text-[10px] text-amber-700">Connectez votre compte pour créer des RDV réels</p>
             </div>
             <button onClick={onConnect} disabled={connecting}
                 className="flex items-center gap-1.5 bg-[#141414] hover:bg-[#141414]/85 disabled:opacity-40 text-white px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex-shrink-0">
                 {connecting ? <Loader2 size={11} className="animate-spin" /> : <Link2 size={11} />}
-                Connecter
+                Connecter Google
             </button>
         </div>
     );
@@ -353,7 +353,7 @@ function ResultView({ data, toolName }) {
     );
 }
 
-/* ── PlanningCalendar ─────────────────────────────────────────────── */
+/*  PlanningCalendar  */
 function PlanningCalendar({ calendarData, doctorName }) {
     const HOUR_PX  = 58;
     const DAY_START = 8;
@@ -424,7 +424,7 @@ function PlanningCalendar({ calendarData, doctorName }) {
     );
 }
 
-/* ── EventCard ────────────────────────────────────────────────────── */
+/*  EventCard  */
 function EventCard({ event, index, onConfirm, confirmingId, totalSteps }) {
     const [expanded, setExpanded] = useState(false);
 
@@ -579,7 +579,7 @@ function EventCard({ event, index, onConfirm, confirmingId, totalSteps }) {
     return null;
 }
 
-/* ── Page principale ──────────────────────────────────────────────── */
+/*  Page principale  */
 export default function AgentMedical() {
     const location = useLocation();
     const [query,           setQuery]           = useState('');

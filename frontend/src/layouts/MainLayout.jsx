@@ -47,10 +47,10 @@ const NAV_ITEMS = [
     { path: '/knowledge',    label: 'Base de connaissances', icon: BookOpen },
     { path: '/notes',        label: 'Nouvelle Note',         icon: FilePlus },
     { path: '/rag',          label: 'Terminal RAG',          icon: MessageSquare },
+    { path: '/agent',        label: 'Agent Médical',         icon: Wand2 },
     { path: '/conversations',label: 'Historique',            icon: History },
     { path: '/admin/users',  label: 'Utilisateurs',          icon: Users },
     { path: '/settings',     label: 'Configuration',         icon: Settings },
-    { path: '/agent',        label: 'Agent Médical',         icon: Wand2 },
 ];
 
 /** Titre affiché dans le header selon la route active. */

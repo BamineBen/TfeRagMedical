@@ -2,21 +2,15 @@
 medical_agent.py — MedicalAgent (Singleton)
 Section 5 : Agent Médical Autonome Multi-Outils.
 
-Correspond EXACTEMENT au diagramme de classes UML (page 1) :
-
 Classe MedicalAgent (Singleton) :
   Attributs :
     ragEngine          : RAGEngine (existant, via RAGQueryTool)
-    calendarManager    : CalendarManager (nouveau — diagramme)
-    interactionChecker : InteractionChecker (nouveau — diagramme)
+    calendarManager    : CalendarManager (nouveau)
+    interactionChecker : InteractionChecker (nouveau)
     intentDetector     : IntentDetector (anciennement IntentClassifier)
-    config             : AgentConfig (nouveau — diagramme)
-
-  Méthodes publiques (diagramme) :
+    config             : AgentConfig (nouveau)
     + processRequest(request: String): AgentResponse
     + dispatch(action: ActionType, request: String): AgentResponse
-
-  Méthodes internes (implémentation SSE — hors diagramme) :
     + run(query, session_id)     → AsyncGenerator SSE
     + plan(query, intent)        → List de steps
     + execute_step(tool, params) → ToolResult
@@ -30,24 +24,21 @@ from typing import AsyncGenerator, Dict, List, Optional
 
 from app.core.agent.calendar_manager import CalendarManager
 from app.core.agent.interaction_checker import InteractionChecker
-from app.core.agent.intent_classifier import IntentDetector, IntentClassifier
+from app.core.agent.intent_classifier import IntentDetector
 from app.core.agent.models import (
-    AgentConfig, AgentResponse, Appointment, Prescription, ToolResult
+    AgentConfig, AgentResponse, Appointment, PatientInfo, Prescription, ToolResult
 )
 from app.core.agent.tools import (
     AgentTool, CalendarReadTool, CalendarWriteTool,
     InteractionCheckTool, RAGQueryTool,
 )
-from app.core.agent.types import ActionType, AgentEventType, IntentType, Status, StepStatus
+from app.core.agent.types import ActionType, AgentEventType, Status
 
 logger = logging.getLogger(__name__)
-
 
 class MedicalAgent:
     """
     Agent médical autonome — Singleton.
-
-    Correspond à «MedicalAgent» du diagramme UML (package Agent, stéréotype Singleton).
 
     PATTERN SINGLETON :
       Une seule instance est créée pour toute l'application.
@@ -59,8 +50,6 @@ class MedicalAgent:
       3. Exécuter chaque outil dans l'ordre (execute_step)
       4. Gérer les confirmations avant écriture (confirm)
       5. Émettre les événements en streaming SSE (run)
-
-    ATTRIBUTS (diagramme UML) :
       ragEngine          : accès aux dossiers patients via RAGQueryTool
       calendarManager    : gestion des rendez-vous (CRUD)
       interactionChecker : vérification des interactions médicamenteuses
@@ -81,8 +70,6 @@ class MedicalAgent:
         """Initialise l'agent une seule fois (garde porte du Singleton)."""
         if self._initialized:
             return
-
-        # ── Attributs du diagramme UML ─────────────────────────────────
         # intentDetector : détecte l'action dans la requête du médecin
         self.intentDetector = IntentDetector()
 
@@ -94,10 +81,6 @@ class MedicalAgent:
 
         # config : paramètres de l'agent
         self.config = AgentConfig(language="fr", timeout=120, privacy_mode=False)
-
-        # ── Alias rétro-compatible ─────────────────────────────────────
-        # L'ancien code utilise self.classifier
-        self.classifier = self.intentDetector
 
         # ── Outils du pipeline SSE (détail d'implémentation) ──────────
         self.tools: Dict[str, AgentTool] = {
@@ -125,8 +108,6 @@ class MedicalAgent:
         """
         Point d'entrée principal pour une requête non-streaming.
 
-        Correspond à MedicalAgent.processRequest() du diagramme UML.
-
         Logique :
           1. Détecter l'action → intentDetector.detectAction()
           2. Router vers le bon handler → dispatch()
@@ -145,8 +126,6 @@ class MedicalAgent:
     def dispatch(self, action: ActionType, request: str) -> AgentResponse:
         """
         Route la requête vers le bon handler selon l'ActionType.
-
-        Correspond à MedicalAgent.dispatch() du diagramme UML.
 
         Paramètres :
           action  : type d'action détecté par intentDetector
@@ -177,7 +156,8 @@ class MedicalAgent:
                     patient_id=patient,
                     medications=meds,
                 )
-                result = self.interactionChecker.validatePrescription(patient, prescription)
+                patient_info = PatientInfo(patient_id=patient or "", name=patient or "", allergies=[])
+                result = self.interactionChecker.validatePrescription(patient_info, prescription)
                 msg = result.description
                 if result.recommendations:
                     msg += "\n\nRecommandations :\n" + "\n".join(
@@ -193,7 +173,7 @@ class MedicalAgent:
             # ── CONSULT_PLANNING : afficher le planning ─────────────────
             elif action == ActionType.CONSULT_PLANNING:
                 events = self.calendarManager.getDoctorSchedule(doctor, date_dt)
-                slots  = self.calendarManager.findAvailableSlots(doctor, duration=30)
+                slots  = self.calendarManager.findAvailableSlots(doctor, date_dt, duration=30)
                 msg = (
                     f"Planning de {doctor} pour le {date_dt.strftime('%d/%m/%Y')} :\n"
                     f"• {len(events)} rendez-vous planifié(s)\n"
@@ -238,15 +218,12 @@ class MedicalAgent:
                 status=Status.FAILED,
             )
 
-    # ══════════════════════════════════════════════════════════════════
-    # PLANNING : retourne List<Map>  (conforme diagramme UML)
-    # ══════════════════════════════════════════════════════════════════
-    def plan(self, query: str, intent: IntentType) -> List[dict]:
+    def plan(self, query: str, intent: ActionType) -> List[dict]:
         """
         Transforme une intention en liste de steps (dict).
         Chaque step : {order, tool_name, params, requires_confirmation, status, label}
         """
-        entities  = self.classifier.extract_entities(query)
+        entities  = self.intentDetector.extract_entities(query)
         patient   = entities.get("patient")
         doctor    = entities.get("doctor") or "Dr Martin"
         date      = entities.get("date") or datetime.utcnow()
@@ -270,7 +247,7 @@ class MedicalAgent:
 
         steps: List[dict] = []
 
-        if intent == IntentType.CONSULT_PLANNING:
+        if intent == ActionType.CONSULT_PLANNING:
             steps.append(_step(1, "calendar_read", {
                 "doctor_name":      doctor,
                 "start":            start.isoformat(),
@@ -278,7 +255,7 @@ class MedicalAgent:
                 "duration_minutes": 30,
             }, label="Consultation du calendrier…"))
 
-        elif intent == IntentType.CREATE_APPOINTMENT:
+        elif intent == ActionType.CREATE_APPOINTMENT:
             order = 1
 
             # Étape 1 (si patient connu) : résumé RAG → injecté dans la description
@@ -311,7 +288,7 @@ class MedicalAgent:
                 },
             }, requires_confirmation=True, label="Création du rendez-vous…"))
 
-        elif intent == IntentType.MODIFY_APPOINTMENT:
+        elif intent == ActionType.MODIFY_APPOINTMENT:
             day_start = date.replace(hour=8,  minute=0, second=0, microsecond=0)
             day_end   = date.replace(hour=18, minute=0, second=0, microsecond=0)
             steps.append(_step(1, "calendar_read", {
@@ -333,7 +310,7 @@ class MedicalAgent:
                 },
             }, requires_confirmation=True, label="Modification du rendez-vous…"))
 
-        elif intent == IntentType.DELETE_APPOINTMENT:
+        elif intent == ActionType.DELETE_APPOINTMENT:
             day_start = date.replace(hour=8,  minute=0, second=0, microsecond=0)
             day_end   = date.replace(hour=18, minute=0, second=0, microsecond=0)
             steps.append(_step(1, "calendar_read", {
@@ -369,8 +346,7 @@ class MedicalAgent:
     ) -> str:
         """
         Génère une phrase de résumé en français visible dans la carte ANSWER.
-        Correspond à l'exigence CDC §5.4 : réponse compréhensible sous chaque résultat.
-        """
+                """
         doctor  = entities.get("doctor") or "le médecin"
         patient = entities.get("patient") or "le patient"
 
@@ -707,7 +683,6 @@ class MedicalAgent:
     def execute_step(self, tool_name: str, params: dict) -> ToolResult:
         """
         Exécute un outil par son nom avec les params fournis.
-        Correspond à MedicalAgent.execute_step(tool_name, params) du diagramme.
         """
         tool = self.tools.get(tool_name)
         if tool is None:
@@ -717,7 +692,6 @@ class MedicalAgent:
     def confirm(self, session_id: str, approved: bool) -> Optional[ToolResult]:
         """
         Reprend l'exécution d'un step en attente après confirmation utilisateur.
-        Correspond à MedicalAgent.confirm(session_id, approved) du diagramme.
         """
         step = self._pending.pop(session_id, None)
         if step is None:
@@ -726,8 +700,7 @@ class MedicalAgent:
             return ToolResult.fail("Action refusée par l'utilisateur")
         return self.execute_step(step["tool_name"], step["params"])
 
-    # ══════════════════════════════════════════════════════════════════
-    # RUN — AsyncGenerator<Map>  (conforme diagramme UML)
+    # ── Streaming SSE ─────────────────────────────────────────────────
     # ══════════════════════════════════════════════════════════════════
     async def run(
         self,
@@ -805,7 +778,7 @@ class MedicalAgent:
 
                 # ── Confirmation requise ? ───────────────────────────
                 if step["requires_confirmation"]:
-                    step["status"] = StepStatus.AWAITING_CONFIRMATION.value
+                    step["status"] = Status.AWAITING_CONFIRMATION.value
                     # Injecter user_id pour que l'outil accède au vrai calendrier
                     if user_id:
                         step["params"]["user_id"] = user_id
@@ -832,12 +805,12 @@ class MedicalAgent:
                     exec_params["llm_mode"] = llm_mode
 
                 # ── Exécution (thread ≠ blocage event loop) ──────────
-                step["status"] = StepStatus.RUNNING.value
+                step["status"] = Status.RUNNING.value
                 result = await asyncio.to_thread(
                     self.execute_step, step["tool_name"], exec_params
                 )
                 step["status"] = (
-                    StepStatus.COMPLETED.value if result.success else StepStatus.FAILED.value
+                    Status.COMPLETED.value if result.success else Status.FAILED.value
                 )
 
                 ev_done = _event(
@@ -895,7 +868,6 @@ class MedicalAgent:
         self._pending.clear()
         logger.info("[MedicalAgent] Fermé")
 
-
 # ── Helpers module-level (évite la répétition) ────────────────────────
 def _step(
     order: int,
@@ -909,10 +881,9 @@ def _step(
         "tool_name":             tool_name,
         "params":                params,
         "requires_confirmation": requires_confirmation,
-        "status":                StepStatus.PENDING.value,
+        "status":                Status.PENDING.value,
         "label":                 label or tool_name,
     }
-
 
 def _event(event_type: AgentEventType, step_name: str, data: dict) -> dict:
     return {

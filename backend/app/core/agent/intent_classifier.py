@@ -5,8 +5,6 @@ Section 5 : Classification de l'intention utilisateur
 Détermine si l'utilisateur veut consulter un planning, créer/modifier/supprimer
 un RDV, vérifier des interactions médicamenteuses, interroger un dossier,
 ou une intention mixte.
-
-Correspond à «IntentDetector» du diagramme de classes UML (page 1) :
   + detectAction(request: String): ActionType
   + extractPatientId(request: String): String
   + extractDoctorId(request: String): String
@@ -21,16 +19,13 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional, Tuple
 
-from app.core.agent.types import ActionType, IntentType
+from app.core.agent.types import ActionType
 
 logger = logging.getLogger(__name__)
-
 
 class IntentDetector:
     """
     Détecteur d'intention utilisateur.
-
-    Correspond à «IntentDetector» du diagramme UML (package Agent).
 
     Méthodes publiques (conformes au diagramme) :
       detectAction(request)   → ActionType  (anciennement classify())
@@ -68,6 +63,8 @@ class IntentDetector:
         r"quand\s+est[-\s]il\s+disponible|qui\s+est\s+disponible|"
         r"absences?|absent|qui\s+travaille|libre[s]?\s+(?:demain|aujourd|lundi|mardi|mercredi|jeudi|vendredi))\b"
         r"|quels?\s+sont\s+les\s+cr[eé]neaux"
+        r"|quels?\s+sont\s+les\s+rendez"  # "quels sont les rendez-vous du Dr"
+        r"|rendez.vous\s+du\s+dr"          # "les rendez-vous du Dr Martin"
     )
     # QUERY_PATIENT : mots relatifs à un dossier médical
     _QUERY_PATIENT_KEYWORDS = (
@@ -112,13 +109,9 @@ class IntentDetector:
     _WEEK_PATTERN  = re.compile(r"\b(cette\s+semaine|semaine\s+prochaine|la\s+semaine)\b", re.IGNORECASE)
     _MONTH_PATTERN = re.compile(r"\b(ce\s+mois|mois\s+prochain|le\s+mois)\b", re.IGNORECASE)
 
-    # ── Méthodes publiques du diagramme UML ───────────────────────────
-
     def detectAction(self, request: str) -> ActionType:
         """
         Détecte l'action demandée dans une requête.
-
-        Méthode principale du diagramme UML : IntentDetector.detectAction().
 
         Paramètres :
           request : texte de la requête du médecin en français
@@ -176,8 +169,6 @@ class IntentDetector:
         """
         Extrait l'identifiant (nom) du patient depuis la requête.
 
-        Méthode du diagramme UML : IntentDetector.extractPatientId().
-
         Paramètres :
           request : texte de la requête du médecin
 
@@ -189,8 +180,6 @@ class IntentDetector:
     def extractDoctorId(self, request: str) -> Optional[str]:
         """
         Extrait l'identifiant (nom) du médecin depuis la requête.
-
-        Méthode du diagramme UML : IntentDetector.extractDoctorId().
 
         Paramètres :
           request : texte de la requête
@@ -266,10 +255,16 @@ class IntentDetector:
         re.IGNORECASE,
     )
 
-    # Mots exclus de la détection patient (articles, titres, etc.)
+    # Mots exclus de la détection patient (articles, titres, mots temporels)
     _EXCLUDE_PATIENT_WORDS = frozenset([
         "le", "la", "les", "un", "une", "dr", "pr", "docteur",
         "ce", "son", "sa", "ses", "mon", "son",
+    ])
+    # Mots temporels à supprimer du nom patient capturé
+    _TEMPORAL_WORDS = frozenset([
+        "demain", "aujourd'hui", "aujourdhui", "lundi", "mardi", "mercredi",
+        "jeudi", "vendredi", "samedi", "dimanche", "matin", "soir", "midi",
+        "apres-demain", "après-demain", "ce", "prochain", "prochaine",
     ])
 
     def detect_patient(self, query: str) -> Optional[str]:
@@ -294,7 +289,10 @@ class IntentDetector:
         m = self._PATIENT_POUR_AVEC_PATTERN.search(query)
         if m:
             candidate = m.group(1).strip()
-            if candidate.lower().split()[0] not in self._EXCLUDE_PATIENT_WORDS:
+            # Supprimer les mots temporels (ex: "LEBRETON Gerard demain" → "LEBRETON Gerard")
+            words = [w for w in candidate.split() if w.lower() not in self._TEMPORAL_WORDS]
+            candidate = " ".join(words)
+            if candidate and candidate.lower().split()[0] not in self._EXCLUDE_PATIENT_WORDS:
                 return candidate.title()
 
         # Priorité 3 : "pour X" avec majuscule initiale
@@ -377,9 +375,3 @@ class IntentDetector:
             minute = int(m.group(2)) if m.group(2) else 0
             return (hour, minute)
         return None
-
-
-# ── Alias rétro-compatible ────────────────────────────────────────────
-# L'ancien code utilise IntentClassifier. On crée un alias pour éviter
-# de casser les imports existants tout en respectant le nouveau nom UML.
-IntentClassifier = IntentDetector

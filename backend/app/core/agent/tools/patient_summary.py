@@ -13,13 +13,8 @@ from app.core.agent.tools.base import AgentTool
 
 logger = logging.getLogger(__name__)
 
-
 class PatientSummaryTool(AgentTool):
-    """
-    Génère un résumé complet du dossier médical d'un patient.
-    Délègue à RAGQueryTool (évite la duplication de logique RAG).
-    Hérite de AgentTool — correspond à PatientSummaryTool du diagramme.
-    """
+    """Génère un résumé du dossier médical d'un patient via RAGQueryTool."""
 
     def __init__(self):
         super().__init__(

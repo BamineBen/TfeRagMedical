@@ -1,8 +1,6 @@
 """
 llm_backend.py — Interface LLMBackend
 Section 5 : Abstraction du modèle de langage utilisé par l'agent.
-
-Correspond à l'interface LLMBackend du diagramme.
 Implémentation concrète : OllamaLLMBackend (utilise le LLM existant du projet).
 """
 import logging
@@ -29,11 +27,9 @@ Règles :
 
 Réponds UNIQUEMENT avec le mot-clé, rien d'autre."""
 
-
 class LLMBackend(ABC):
     """
     Interface abstraite pour les backends LLM.
-    Correspond à LLMBackend <<Interface>> du diagramme.
     """
 
     @abstractmethod
@@ -45,7 +41,6 @@ class LLMBackend(ABC):
     async def generate_stream(self, prompt: str) -> AsyncGenerator[str, None]:
         """Génère une réponse en streaming."""
         ...
-
 
 class OllamaLLMBackend(LLMBackend):
     """

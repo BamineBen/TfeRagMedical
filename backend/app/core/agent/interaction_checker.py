@@ -1,3 +1,4 @@
+"""
 interaction_checker.py : Vérification des interactions médicamenteuses.
 
 Base de données des interactions connues codée en "dur" cas de test (pour le TFE).
@@ -5,7 +6,7 @@ Base de données des interactions connues codée en "dur" cas de test (pour le T
 
 Algorithme : O(n²) compare chaque paire de médicaments.
 Pour 10 médicaments : 45 paires à vérifier (10×9/2).
-
+"""
 import logging
 from typing import Dict, List, Tuple
 
@@ -13,7 +14,6 @@ from app.core.agent.models import InteractionResult, PatientInfo, Prescription
 from app.core.agent.types import InteractionSeverity, Status
 
 logger = logging.getLogger(__name__)
-
 
 class InteractionChecker:
     """
@@ -153,28 +153,24 @@ class InteractionChecker:
 
     def validatePrescription(self, patient_info: PatientInfo, prescription: Prescription) -> InteractionResult:
         """
-        Point d'entrée principal : vérifie interactions ET allergies.
-        Retourne le résultat le plus grave des deux vérifications.
+        Inclut : vérification interactions + vérification allergies.
+        Retourne le résultat le plus grave.
         """
-        r_interact = self.checkDrugInteractions(prescription.medications)
-        r_allergy  = self.checkAllergies(patient_info, prescription.medications)
+        candidates = [
+            r for r in [
+                self.checkDrugInteractions(prescription.medications),
+                self.checkAllergies(patient_info, prescription.medications),
+            ]
+            if r.has_interaction
+        ]
+        if not candidates:
+            return InteractionResult(has_interaction=False, status=Status.COMPLETED)
+        return max(candidates, key=lambda r: self._SEVERITY_RANK.get(r.severity, 0))
 
-        if r_interact.has_interaction and r_allergy.has_interaction:
-            # Garder le plus grave
-            if self._severity_rank(r_interact.severity) >= self._severity_rank(r_allergy.severity):
-                return r_interact
-            return r_allergy
-        if r_interact.has_interaction:
-            return r_interact
-        if r_allergy.has_interaction:
-            return r_allergy
-        return InteractionResult(has_interaction=False, status=Status.COMPLETED)
-
-    @staticmethod
-    def _severity_rank(sev: InteractionSeverity) -> int:
-        return {
-            InteractionSeverity.LOW:      1,
-            InteractionSeverity.MEDIUM:   2,
-            InteractionSeverity.HIGH:     3,
-            InteractionSeverity.CRITICAL: 4,
-        }.get(sev, 0)
+    # Dictionnaire de rang — attribut de classe (reconstruit une seule fois)
+    _SEVERITY_RANK: Dict = {
+        InteractionSeverity.LOW:      1,
+        InteractionSeverity.MEDIUM:   2,
+        InteractionSeverity.HIGH:     3,
+        InteractionSeverity.CRITICAL: 4,
+    }

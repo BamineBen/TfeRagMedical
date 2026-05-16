@@ -1,10 +1,11 @@
+"""
 agent.py : Endpoints FastAPI de l'agent médical autonome.
 
 Endpoints :
   POST /agent/stream  → Lance une requête agent (SSE streaming)
   POST /agent/confirm → Confirme/rejette une action en attente
   GET  /agent/tools   → Liste des outils disponibles
-
+"""
 import json
 import logging
 from fastapi import APIRouter
